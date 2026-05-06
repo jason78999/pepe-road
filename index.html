@@ -1,0 +1,700 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Pepe Crossy - Telegram Mini App</title>
+    <!-- Telegram WebApp SDK -->
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <!-- Phaser 3 CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
+    <!-- Supabase CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;900&display=swap" rel="stylesheet">
+    <style>
+        body,
+        html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            background: #0f172a;
+            overflow: hidden;
+            font-family: 'Inter', sans-serif;
+            touch-action: none;
+            /* Prevent browser zoom/scroll */
+            user-select: none;
+        }
+
+        #game-container {
+            width: 100%;
+            height: 100%;
+        }
+
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+        }
+
+        #score-display {
+            text-align: center;
+            font-size: 42px;
+            color: white;
+            margin-top: 30px;
+            font-weight: 900;
+            text-shadow: 0px 4px 0px #000, 0px -2px 0px #000, 2px 0px 0px #000, -2px 0px 0px #000;
+        }
+
+        #game-over-screen {
+            display: none;
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(15, 23, 42, 0.9);
+            pointer-events: auto;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            z-index: 10;
+            backdrop-filter: blur(5px);
+        }
+
+        .btn {
+            background: #3b82f6;
+            color: white;
+            border: none;
+            padding: 18px 30px;
+            font-size: 18px;
+            border-radius: 16px;
+            margin: 10px;
+            cursor: pointer;
+            font-weight: 900;
+            width: 80%;
+            max-width: 320px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            box-shadow: 0 6px 0px #2563eb;
+            transition: transform 0.1s, box-shadow 0.1s;
+        }
+
+        .btn:active {
+            transform: translateY(4px);
+            box-shadow: 0 2px 0px #2563eb;
+        }
+
+        .btn-invite {
+            background: #10b981;
+            box-shadow: 0 6px 0px #059669;
+        }
+
+        .btn-invite:active {
+            box-shadow: 0 2px 0px #059669;
+        }
+
+        .stat {
+            font-size: 24px;
+            margin: 8px 0;
+            font-weight: 600;
+        }
+
+        .title {
+            font-size: 56px;
+            margin-bottom: 30px;
+            color: #ef4444;
+            font-weight: 900;
+            text-shadow: 0px 4px 0px #991b1b;
+        }
+
+        .frog-icon {
+            font-size: 72px;
+            margin-bottom: 10px;
+            filter: drop-shadow(0px 4px 0px #000);
+        }
+    </style>
+</head>
+
+<body>
+    <div id="game-container"></div>
+    <div id="ui-layer">
+        <div id="score-display">0</div>
+    </div>
+
+    <!-- Game Over Overlay -->
+    <div id="game-over-screen">
+        <div class="frog-icon">🐸</div>
+        <div class="title">SPLAT!</div>
+        <div class="stat" id="go-score">Score: 0</div>
+        <div class="stat" id="go-coins" style="color: #fbbf24;">Coins: 0</div>
+
+        <div
+            style="background: rgba(255,255,255,0.1); padding: 15px 30px; border-radius: 16px; margin: 25px 0; text-align: center;">
+            <div class="stat" id="go-best" style="font-size: 18px; color: #e2e8f0; margin: 0;">Personal Best: 0</div>
+            <div class="stat" id="go-top" style="font-size: 18px; color: #94a3b8; margin: 5px 0 0 0;">Top Player to
+                beat: 0</div>
+        </div>
+
+        <button class="btn" id="btn-play">Play Again</button>
+        <button class="btn btn-invite" id="btn-invite">Invite Friend</button>
+    </div>
+
+    <script>
+        /**
+         * ⚙️ CONFIGURATION
+         */
+        const BOT_APP_URL = 'https://t.me/pepecrossy_bot/app'; // Your Telegram Mini App URL for invites
+
+        // Supabase configuration
+        const SUPABASE_URL = 'https://hwjtruruvsuvmgqjsoez.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh3anRydXJ1dnN1dm1ncWpzb2V6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgwNjcyNDUsImV4cCI6MjA5MzY0MzI0NX0.4YU1RLGaaplqDgXwolaRIk39m1mQ0JtBwLFjluP0uEY';
+
+        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+        /**
+         * 📱 TELEGRAM SDK INIT
+         */
+        const tg = window.Telegram.WebApp;
+        tg.expand(); // Expand to full height
+        tg.ready();  // Notify Telegram app is ready
+
+        // Fallback user data for local testing outside Telegram
+        let user = tg.initDataUnsafe?.user || {
+            id: Math.floor(Math.random() * 1000000).toString(),
+            username: 'GuestPlayer',
+            first_name: 'Guest'
+        };
+
+        /**
+         * 💾 DATA MANAGEMENT
+         */
+        let personalBest = 0;
+        let globalTop = 0;
+
+        async function initData() {
+            try {
+                // Fetch Personal Best
+                const { data: pbData } = await supabase
+                    .from('scores')
+                    .select('score')
+                    .eq('user_id', user.id.toString())
+                    .order('score', { ascending: false })
+                    .limit(1);
+
+                if (pbData && pbData.length > 0) personalBest = pbData[0].score;
+
+                // Fetch a Top Score to beat (randomized from Top 10 for variety)
+                const { data: topData } = await supabase
+                    .from('scores')
+                    .select('score')
+                    .order('score', { ascending: false })
+                    .limit(10);
+
+                if (topData && topData.length > 0) {
+                    const randIndex = Math.floor(Math.random() * topData.length);
+                    globalTop = topData[randIndex].score;
+                }
+            } catch (e) {
+                console.warn("Supabase not configured or error fetching:", e);
+            }
+        }
+        initData();
+
+        async function saveScore(score, coins) {
+            if (score > personalBest) personalBest = score;
+            if (score > globalTop) globalTop = score;
+
+            try {
+                // Direct insert from frontend using Anon Key
+                await supabase.from('scores').insert([{
+                    user_id: user.id.toString(),
+                    username: user.username || user.first_name || 'Player',
+                    score: score,
+                    coins: coins,
+                    timestamp: new Date().toISOString()
+                }]);
+            } catch (e) {
+                console.warn("Error saving score to Supabase:", e);
+            }
+        }
+
+        /**
+         * 🐸 PHASER GAME LOGIC
+         */
+        const TILE_SIZE = 40;
+        const COLS = 9;
+        const ROWS = 16;
+        const WIDTH = COLS * TILE_SIZE; // 360
+        const HEIGHT = ROWS * TILE_SIZE; // 640
+        const START_Y = HEIGHT - TILE_SIZE * 2;
+
+        function getY(row) { return START_Y - row * TILE_SIZE; }
+        function getX(col) { return col * TILE_SIZE + TILE_SIZE / 2; }
+
+        class BootScene extends Phaser.Scene {
+            constructor() { super('BootScene'); }
+            preload() {
+                // Generate Textures dynamically (No external assets required)
+                let g = this.add.graphics();
+
+                // 1. Pepe Frog
+                g.fillStyle(0x4ade80); g.fillRoundedRect(0, 0, TILE_SIZE - 4, TILE_SIZE - 4, 8);
+                // Eyes
+                g.fillStyle(0xffffff); g.fillCircle(10, 10, 6); g.fillCircle(TILE_SIZE - 14, 10, 6);
+                g.fillStyle(0x000000); g.fillCircle(10, 10, 3); g.fillCircle(TILE_SIZE - 14, 10, 3);
+                // Mouth
+                g.fillStyle(0xef4444); g.fillRoundedRect(8, TILE_SIZE - 18, 20, 6, 3);
+                g.generateTexture('frog', TILE_SIZE - 4, TILE_SIZE - 4); g.clear();
+
+                // 2. Car
+                g.fillStyle(0xef4444); g.fillRoundedRect(0, 0, TILE_SIZE * 1.4, TILE_SIZE * 0.7, 6);
+                g.fillStyle(0xf87171); g.fillRoundedRect(0, 0, TILE_SIZE * 1.4, 4, 2); // Highlight
+                g.fillStyle(0x9ca3af); g.fillRect(TILE_SIZE * 0.2, TILE_SIZE * 0.1, TILE_SIZE * 1.0, TILE_SIZE * 0.5); // Window
+                g.generateTexture('car', TILE_SIZE * 1.4, TILE_SIZE * 0.7); g.clear();
+
+                // 3. Log
+                g.fillStyle(0x8b5a2b); g.fillRoundedRect(0, 0, TILE_SIZE * 2.4, TILE_SIZE * 0.7, 10);
+                g.fillStyle(0x6b4226); g.fillRect(10, 6, TILE_SIZE * 2.4 - 20, 4);
+                g.fillRect(15, 16, TILE_SIZE * 2.4 - 30, 4);
+                g.generateTexture('log', TILE_SIZE * 2.4, TILE_SIZE * 0.7); g.clear();
+
+                // 4. Train
+                g.fillStyle(0x1f2937); g.fillRect(0, 0, TILE_SIZE * 5, TILE_SIZE * 0.8);
+                g.fillStyle(0xfbbf24); g.fillRect(0, TILE_SIZE * 0.2, TILE_SIZE * 5, 6); // Yellow stripe
+                g.fillStyle(0x9ca3af); g.fillRect(10, 10, 20, 12); g.fillRect(40, 10, 20, 12); // Windows
+                g.generateTexture('train', TILE_SIZE * 5, TILE_SIZE * 0.8); g.clear();
+
+                // 5. Coin
+                g.fillStyle(0xfbbf24); g.fillCircle(TILE_SIZE / 2, TILE_SIZE / 2, TILE_SIZE / 3);
+                g.fillStyle(0xf59e0b); g.fillCircle(TILE_SIZE / 2, TILE_SIZE / 2, TILE_SIZE / 4);
+                g.generateTexture('coin', TILE_SIZE, TILE_SIZE); g.clear();
+
+                // 6. Grass Background
+                g.fillStyle(0x22c55e); g.fillRect(0, 0, WIDTH, TILE_SIZE);
+                g.fillStyle(0x16a34a);
+                for (let i = 0; i < 15; i++) g.fillRect(Math.random() * WIDTH, Math.random() * TILE_SIZE, 4, 8);
+                g.generateTexture('bg_grass', WIDTH, TILE_SIZE); g.clear();
+
+                // 7. Road Background
+                g.fillStyle(0x374151); g.fillRect(0, 0, WIDTH, TILE_SIZE);
+                g.fillStyle(0x9ca3af);
+                for (let i = 0; i < WIDTH; i += 40) g.fillRect(i, TILE_SIZE / 2 - 2, 20, 4);
+                g.generateTexture('bg_road', WIDTH, TILE_SIZE); g.clear();
+
+                // 8. River Background
+                g.fillStyle(0x2563eb); g.fillRect(0, 0, WIDTH, TILE_SIZE);
+                g.fillStyle(0x60a5fa);
+                for (let i = 0; i < 10; i++) g.fillRoundedRect(Math.random() * WIDTH, Math.random() * TILE_SIZE, 20, 4, 2);
+                g.generateTexture('bg_river', WIDTH, TILE_SIZE); g.clear();
+
+                // 9. Train Track Background
+                g.fillStyle(0x78716c); g.fillRect(0, 0, WIDTH, TILE_SIZE);
+                g.fillStyle(0x44403c); g.fillRect(0, TILE_SIZE / 2 - 4, WIDTH, 8); // Rail
+                g.fillStyle(0xa8a29e);
+                for (let i = 0; i < WIDTH; i += 20) g.fillRect(i, TILE_SIZE / 2 - 8, 4, 16); // Ties
+                g.generateTexture('bg_track', WIDTH, TILE_SIZE); g.clear();
+
+                // 10. Train Warning
+                g.fillStyle(0xef4444, 0.6); g.fillRect(0, 0, WIDTH, TILE_SIZE);
+                g.generateTexture('warning', WIDTH, TILE_SIZE); g.clear();
+
+                g.destroy();
+            }
+            create() {
+                this.scene.start('MainScene');
+            }
+        }
+
+        class MainScene extends Phaser.Scene {
+            constructor() { super('MainScene'); }
+
+            create() {
+                this.lanes = [];
+                this.currentRow = 0;
+                this.currentCol = 4;
+                this.maxRow = 0;
+                this.highestRowGenerated = 0;
+                this.score = 0;
+                this.coinsCollected = 0;
+                this.isDead = false;
+                this.isJumping = false;
+
+                document.getElementById('score-display').innerText = '0';
+
+                this.cars = this.physics.add.group();
+                this.logs = this.physics.add.group();
+                this.trains = this.physics.add.group();
+                this.coins = this.physics.add.group();
+
+                // Generate initial safe lanes
+                for (let i = -3; i <= 20; i++) {
+                    this.generateLane(i);
+                    this.highestRowGenerated = i;
+                }
+
+                // Player setup
+                this.player = this.physics.add.sprite(getX(this.currentCol), getY(this.currentRow), 'frog');
+                this.player.setDepth(10);
+                this.player.setSize(TILE_SIZE * 0.6, TILE_SIZE * 0.6); // Forgiving hitbox
+
+                // Camera follow
+                this.cameras.main.setBounds(0, -Infinity, WIDTH, Infinity);
+
+                // Keyboard Input
+                this.input.keyboard.on('keydown-UP', () => this.movePlayer(0, 1));
+                this.input.keyboard.on('keydown-DOWN', () => this.movePlayer(0, -1));
+                this.input.keyboard.on('keydown-LEFT', () => this.movePlayer(-1, 0));
+                this.input.keyboard.on('keydown-RIGHT', () => this.movePlayer(1, 0));
+                this.input.keyboard.on('keydown-W', () => this.movePlayer(0, 1));
+                this.input.keyboard.on('keydown-S', () => this.movePlayer(0, -1));
+                this.input.keyboard.on('keydown-A', () => this.movePlayer(-1, 0));
+                this.input.keyboard.on('keydown-D', () => this.movePlayer(1, 0));
+
+                // Touch / Swipe Input
+                this.input.on('pointerdown', (pointer) => {
+                    this.swipeX = pointer.x;
+                    this.swipeY = pointer.y;
+                });
+                this.input.on('pointerup', (pointer) => {
+                    let dx = pointer.x - this.swipeX;
+                    let dy = pointer.y - this.swipeY;
+                    if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 30) {
+                        this.movePlayer(dx > 0 ? 1 : -1, 0); // Swipe Left/Right
+                    } else if (Math.abs(dy) > 30) {
+                        this.movePlayer(0, dy > 0 ? -1 : 1); // Swipe Up/Down (Down swipe = backward)
+                    } else {
+                        this.movePlayer(0, 1); // Simple Tap = move forward
+                    }
+                });
+
+                // Set up Death Collisions
+                this.physics.add.overlap(this.player, this.cars, this.die, null, this);
+                this.physics.add.overlap(this.player, this.trains, this.die, null, this);
+                this.physics.add.overlap(this.player, this.coins, this.collectCoin, null, this);
+            }
+
+            generateLane(row) {
+                let type = 0; // 0: grass, 1: road, 2: river, 3: track
+
+                if (row > 2) {
+                    let r = Math.random();
+                    let prevType = this.lanes[row - 1]?.type || 0;
+
+                    // Logic to prevent impossible/annoying patterns
+                    if (prevType === 2 && Math.random() < 0.4) type = 2; // Keep rivers connected
+                    else if (r < 0.25) type = 0; // 25% Grass
+                    else if (r < 0.65) type = 1; // 40% Road
+                    else if (r < 0.85) type = 2; // 20% River
+                    else type = 3;               // 15% Track
+
+                    // Prevent more than 3 rivers in a row
+                    if (type === 2 && prevType === 2 && this.lanes[row - 2]?.type === 2) type = 0;
+                } else if (row >= -3 && row <= 2) {
+                    type = 0; // Safe starting area
+                }
+
+                let y = getY(row);
+                let bgType = ['bg_grass', 'bg_road', 'bg_river', 'bg_track'][type];
+                let bg = this.add.image(WIDTH / 2, y, bgType);
+                bg.setDepth(0);
+
+                this.lanes[row] = { type, y, elements: [], bg };
+
+                let dir = Math.random() > 0.5 ? 1 : -1;
+
+                if (type === 1) { // 🚙 Road
+                    let speed = 60 + Math.random() * 60 + (row * 0.4); // Increases slightly with distance
+                    let count = Math.floor(1 + Math.random() * 2);
+                    for (let i = 0; i < count; i++) {
+                        let car = this.cars.create(Math.random() * WIDTH, y, 'car');
+                        car.setVelocityX(dir * speed);
+                        car.dir = dir;
+                        car.setDepth(5);
+                        if (dir === -1) car.flipX = true;
+                    }
+                } else if (type === 2) { // 🪵 River
+                    let speed = 40 + Math.random() * 40;
+                    let count = 2 + Math.floor(Math.random() * 2);
+                    for (let i = 0; i < count; i++) {
+                        let x = (WIDTH / count) * i + (Math.random() * 20);
+                        let log = this.logs.create(x, y, 'log');
+                        log.setVelocityX(dir * speed);
+                        log.dir = dir;
+                        log.setDepth(4);
+                    }
+                } else if (type === 3) { // 🚋 Train Track
+                    this.time.addEvent({
+                        delay: 2000 + Math.random() * 5000,
+                        callback: () => this.spawnTrain(row, y, dir),
+                        loop: true
+                    });
+                }
+
+                // 🪙 Spawn Coins on grass or road
+                if ((type === 0 || type === 1) && Math.random() < 0.15) {
+                    let col = Math.floor(Math.random() * COLS);
+                    let coin = this.coins.create(getX(col), y, 'coin');
+                    coin.setDepth(4);
+
+                    this.tweens.add({
+                        targets: coin,
+                        y: y - 5,
+                        duration: 1000,
+                        yoyo: true,
+                        repeat: -1,
+                        ease: 'Sine.easeInOut'
+                    });
+                }
+            }
+
+            spawnTrain(row, y, dir) {
+                if (this.isDead || this.currentRow < row - 8) return;
+
+                // Flash Warning
+                let warning = this.add.image(WIDTH / 2, y, 'warning');
+                warning.setDepth(1);
+
+                this.tweens.add({
+                    targets: warning,
+                    alpha: { from: 1, to: 0 },
+                    duration: 300,
+                    yoyo: true,
+                    repeat: 3,
+                    onComplete: () => {
+                        warning.destroy();
+                        if (this.isDead) return;
+
+                        // Spawn fast train
+                        let startX = dir === 1 ? -200 : WIDTH + 200;
+                        let train = this.trains.create(startX, y, 'train');
+                        train.setVelocityX(dir * 1200);
+                        train.dir = dir;
+                        train.setDepth(6);
+
+                        // Haptic feedback & shake
+                        tg.HapticFeedback?.impactOccurred('medium');
+                        this.cameras.main.shake(300, 0.005);
+                    }
+                });
+            }
+
+            movePlayer(dCol, dRow) {
+                if (this.isDead || this.isJumping) return;
+
+                // If standing on a moving log, recalculate actual column before moving
+                let currentLane = this.lanes[this.currentRow];
+                if (currentLane && currentLane.type === 2) {
+                    this.currentCol = Math.floor(this.player.x / TILE_SIZE);
+                }
+
+                let targetCol = this.currentCol + dCol;
+                let targetRow = this.currentRow + dRow;
+
+                // Bounds check
+                if (targetCol < 0 || targetCol >= COLS) return;
+                if (targetRow < this.currentRow - 2) return; // Limit backwards movement
+
+                this.currentCol = targetCol;
+                this.currentRow = targetRow;
+
+                // Score Update
+                if (this.currentRow > this.maxRow) {
+                    this.maxRow = this.currentRow;
+                    this.score++;
+                    document.getElementById('score-display').innerText = this.score;
+                    tg.HapticFeedback?.impactOccurred('light');
+                }
+
+                let targetX = getX(this.currentCol);
+                let targetY = getY(this.currentRow);
+
+                this.isJumping = true;
+
+                // Rotation
+                if (dCol > 0) this.player.angle = 90;
+                else if (dCol < 0) this.player.angle = -90;
+                else if (dRow > 0) this.player.angle = 0;
+                else if (dRow < 0) this.player.angle = 180;
+
+                // Jump Tween (Position)
+                this.tweens.add({
+                    targets: this.player,
+                    x: targetX,
+                    y: targetY,
+                    duration: 120,
+                    onComplete: () => { this.isJumping = false; }
+                });
+
+                // Jump Tween (Scale arc)
+                this.tweens.add({
+                    targets: this.player,
+                    scaleX: 1.3,
+                    scaleY: 1.3,
+                    yoyo: true,
+                    duration: 60
+                });
+            }
+
+            collectCoin(player, coin) {
+                coin.destroy();
+                this.coinsCollected++;
+                tg.HapticFeedback?.notificationOccurred('success');
+
+                // Visual feedback pop
+                let pop = this.add.text(player.x, player.y - 20, '+1', { fontSize: '20px', color: '#fbbf24', fontStyle: '900' });
+                pop.setDepth(15);
+                this.tweens.add({
+                    targets: pop,
+                    y: player.y - 50,
+                    alpha: 0,
+                    duration: 800,
+                    onComplete: () => pop.destroy()
+                });
+            }
+
+            die() {
+                if (this.isDead) return;
+                this.isDead = true;
+
+                tg.HapticFeedback?.notificationOccurred('error');
+
+                this.player.setTint(0xff0000);
+                this.cameras.main.shake(300, 0.02);
+                this.tweens.killTweensOf(this.player);
+
+                // Persist Data
+                saveScore(this.score, this.coinsCollected);
+
+                // Show UI
+                setTimeout(() => {
+                    document.getElementById('game-over-screen').style.display = 'flex';
+                    document.getElementById('go-score').innerText = 'Score: ' + this.score;
+                    document.getElementById('go-coins').innerText = 'Coins: ' + this.coinsCollected;
+                    document.getElementById('go-best').innerText = 'Personal Best: ' + Math.max(personalBest, this.score);
+                    document.getElementById('go-top').innerText = 'Top Player to beat: ' + Math.max(globalTop, this.score);
+                }, 800);
+            }
+
+            update(time, delta) {
+                if (this.isDead) return;
+
+                // 1. Infinite World Generation
+                if (this.currentRow > this.highestRowGenerated - 12) {
+                    this.highestRowGenerated++;
+                    this.generateLane(this.highestRowGenerated);
+                }
+
+                // 2. Camera Follow (Smooth follow player Y)
+                let targetCamY = getY(this.currentRow) - HEIGHT * 0.6;
+                let cam = this.cameras.main;
+                cam.scrollY += (targetCamY - cam.scrollY) * 0.1;
+
+                // Death by falling off bottom of screen
+                if (this.player.y > cam.scrollY + HEIGHT + TILE_SIZE) {
+                    this.die();
+                }
+
+                // 3. Wrapping obstacles
+                this.cars.getChildren().forEach(car => {
+                    if (car.dir === 1 && car.x > WIDTH + 100) car.x = -100;
+                    if (car.dir === -1 && car.x < -100) car.x = WIDTH + 100;
+                });
+                this.logs.getChildren().forEach(log => {
+                    if (log.dir === 1 && log.x > WIDTH + 150) log.x = -150;
+                    if (log.dir === -1 && log.x < -150) log.x = WIDTH + 150;
+                });
+                this.trains.getChildren().forEach(train => {
+                    if ((train.dir === 1 && train.x > WIDTH + 300) || (train.dir === -1 && train.x < -300)) train.destroy();
+                });
+
+                // 4. River/Log Logic
+                let currentLane = this.lanes[this.currentRow];
+                if (currentLane && currentLane.type === 2) {
+                    let onLog = false;
+                    let standingLog = null;
+
+                    // Shrink player bounds slightly so you don't survive by standing on the very edge
+                    let pBounds = this.player.getBounds();
+                    pBounds.width *= 0.4; pBounds.height *= 0.4;
+                    pBounds.x += pBounds.width * 0.75; pBounds.y += pBounds.height * 0.75;
+
+                    this.logs.getChildren().forEach(log => {
+                        if (Phaser.Geom.Intersects.RectangleToRectangle(pBounds, log.getBounds())) {
+                            onLog = true;
+                            standingLog = log;
+                        }
+                    });
+
+                    if (!onLog && !this.isJumping) {
+                        // Drowned 💦
+                        this.tweens.add({ targets: this.player, scaleX: 0, scaleY: 0, alpha: 0, duration: 200 });
+                        this.die();
+                    } else if (onLog && !this.isJumping) {
+                        // Ride the log
+                        this.player.x += standingLog.body.velocity.x * (delta / 1000);
+
+                        // Drifted off screen
+                        if (this.player.x < -TILE_SIZE / 2 || this.player.x > WIDTH + TILE_SIZE / 2) {
+                            this.die();
+                        }
+                    }
+                }
+            }
+        }
+
+        /**
+         * 🚀 BOOTSTRAP
+         */
+        const config = {
+            type: Phaser.AUTO,
+            parent: 'game-container',
+            scale: {
+                mode: Phaser.Scale.FIT,
+                autoCenter: Phaser.Scale.CENTER_BOTH,
+                width: WIDTH,
+                height: HEIGHT
+            },
+            physics: {
+                default: 'arcade',
+                arcade: { debug: false }
+            },
+            scene: [BootScene, MainScene],
+            backgroundColor: '#0f172a'
+        };
+
+        const game = new Phaser.Game(config);
+
+        /**
+         * 🖱️ UI EVENT LISTENERS
+         */
+        document.getElementById('btn-play').addEventListener('click', () => {
+            tg.HapticFeedback?.impactOccurred('light');
+            document.getElementById('game-over-screen').style.display = 'none';
+            game.scene.start('MainScene');
+        });
+
+        document.getElementById('btn-invite').addEventListener('click', () => {
+            tg.HapticFeedback?.impactOccurred('medium');
+            const score = document.getElementById('score-display').innerText;
+            const text = `I just scored ${score} in Pepe Crossy! 🐸 Can you beat my high score?`;
+
+            // Generate Telegram Deeplink Share URL
+            const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(BOT_APP_URL)}&text=${encodeURIComponent(text)}`;
+
+            // Open link within Telegram
+            tg.openTelegramLink(shareUrl);
+        });
+
+    </script>
+</body>
+
+</html>
