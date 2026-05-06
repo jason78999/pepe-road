@@ -158,7 +158,7 @@
         const SUPABASE_URL = 'https://hwjtruruvsuvmgqjsoez.supabase.co';
         const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh3anRydXJ1dnN1dm1ncWpzb2V6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgwNjcyNDUsImV4cCI6MjA5MzY0MzI0NX0.4YU1RLGaaplqDgXwolaRIk39m1mQ0JtBwLFjluP0uEY';
 
-        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
         /**
          * 📱 TELEGRAM SDK INIT
@@ -183,7 +183,7 @@
         async function initData() {
             try {
                 // Fetch Personal Best
-                const { data: pbData } = await supabase
+                const { data: pbData } = await supabaseClient
                     .from('scores')
                     .select('score')
                     .eq('user_id', user.id.toString())
@@ -193,7 +193,7 @@
                 if (pbData && pbData.length > 0) personalBest = pbData[0].score;
 
                 // Fetch a Top Score to beat (randomized from Top 10 for variety)
-                const { data: topData } = await supabase
+                const { data: topData } = await supabaseClient
                     .from('scores')
                     .select('score')
                     .order('score', { ascending: false })
@@ -215,7 +215,7 @@
 
             try {
                 // Direct insert from frontend using Anon Key
-                await supabase.from('scores').insert([{
+                await supabaseClient.from('scores').insert([{
                     user_id: user.id.toString(),
                     username: user.username || user.first_name || 'Player',
                     score: score,
